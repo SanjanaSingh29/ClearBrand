@@ -9,7 +9,12 @@ from google.genai import types
 
 load_dotenv()
 
-MODELS = ["gemini-3.8-flash"]  # add a backup model name from Google AI Studio's list
+MODELS = [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+]  
 
 SYSTEM = """You are a brand-compliance reviewer. You check a draft ONLY against the approved passages provided.
 
