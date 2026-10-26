@@ -1,6 +1,8 @@
 import os
 import streamlit as st
 from core.db import init_db
+from core.seed import seed_if_empty
+from core.style import inject_css
 
 ROLES = ["Creator", "Reviewer", "Manager"]
 
@@ -25,6 +27,8 @@ def setup_page(page_title):
         layout="wide",
     )
     init_db()
+    seed_if_empty()
+    inject_css()
 
     if "current_role" not in st.session_state:
         st.session_state.current_role = ROLES[0]
