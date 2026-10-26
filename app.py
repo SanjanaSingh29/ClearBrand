@@ -1,4 +1,7 @@
 import streamlit as st
+from core.db import init_db
+
+init_db()
 
 st.set_page_config(page_title="ClearBrand", page_icon="assets/logo.png", layout="wide")
 ROLES = ["Creator", "Reviewer", "Manager"]
