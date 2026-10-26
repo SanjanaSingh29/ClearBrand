@@ -6,6 +6,8 @@ from core.review import run_checks
 
 role = setup_page("Review Draft")
 st.title("Review Draft")
+if not db.list_sources():
+    st.warning("No brand material has been added yet, so drafts cannot be checked. A Manager needs to add guidelines, approved facts and a glossary on the Brand Setup page first.")
 
 CONTENT_TYPES = ["Social post", "Blog draft", "Press release", "Email copy", "Other"]
 SEV_ICON = {"high": "🔴", "medium": "🟠", "low": "🔵"}

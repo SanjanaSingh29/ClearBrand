@@ -21,8 +21,15 @@ def run_checks(text):
             if dropped:
                 notice = f"{dropped} AI finding(s) were discarded because their source or quote could not be verified."
 
-    seen = {f["flagged_text"].lower() for f in rule_findings}
-    ai_findings = [f for f in ai_findings if f["flagged_text"].lower() not in seen]
+    def duplicates_rule(f):
+        a = f["flagged_text"].lower()
+        for r in rule_findings:
+            t = r["flagged_text"].lower()
+            if r["source_code"] == f["source_code"] and (t in a or a in t):
+                return True
+        return False
+
+    ai_findings = [f for f in ai_findings if not duplicates_rule(f)]
 
     combined = rule_findings + ai_findings
     low_text = text.lower()
