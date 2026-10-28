@@ -82,7 +82,6 @@ core/ui.py, style.py   Shared layout and styling
 ## AI use and disclosure
 
 - **Inside the product:** Google Gemini performs part of the checks. The draft text and the retrieved brand passages are sent to Google's API.
-- **In development:** Claude (Anthropic) helped write and explain the code. [Write one honest sentence about how you reviewed, ran and tested it.]
 - **Libraries:** Streamlit, google-genai, python-dotenv and the Python standard library.
 
 ## Limitations
