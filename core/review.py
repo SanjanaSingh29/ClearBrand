@@ -1,9 +1,10 @@
-from core import db, rules, retrieval, ai_check, verify
+from core import db, rules, retrieval, ai_check, verify, accessibility
 
 
 def run_checks(text):
-    """Returns (findings, notice). Rule checks always run; the AI check is added when possible."""
+    """Returns (findings, notice). Rule and accessibility checks always run; the AI check is added when possible."""
     rule_findings = rules.run_rule_checks(text)
+    a11y_findings = accessibility.check_accessibility(text)
     notice = None
     ai_findings = []
 
@@ -31,7 +32,7 @@ def run_checks(text):
 
     ai_findings = [f for f in ai_findings if not duplicates_rule(f)]
 
-    combined = rule_findings + ai_findings
+    combined = rule_findings + a11y_findings + ai_findings
     low_text = text.lower()
     combined.sort(key=lambda f: low_text.find(f["flagged_text"].lower()))
     return combined, notice

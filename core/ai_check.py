@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -9,12 +10,13 @@ from google.genai import types
 
 load_dotenv()
 
-MODELS = [
-    "gemini-3.8-flash",
-    "gemini-3.7-flash",
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
-]  
+# Newest first. Keep this list short: every extra model adds waiting time on a bad day.
+MODELS = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
+
+TOTAL_BUDGET_SECONDS = 25   # the whole AI check gives up after this long
+PER_CALL_SECONDS = 14       # one model gets this long before we try the next
+
+_executor = ThreadPoolExecutor(max_workers=4)
 
 SYSTEM = """You are a brand-compliance reviewer. You check a draft ONLY against the approved passages provided.
 
@@ -44,6 +46,22 @@ def get_api_key():
         return None
 
 
+def _make_client(key):
+    """Short HTTP timeout and no hidden retries. Falls back if this library version lacks an option."""
+    try:
+        options = types.HttpOptions(
+            timeout=20000,
+            retry_options=types.HttpRetryOptions(attempts=1),
+        )
+        return genai.Client(api_key=key, http_options=options)
+    except Exception:
+        pass
+    try:
+        return genai.Client(api_key=key, http_options=types.HttpOptions(timeout=20000))
+    except Exception:
+        return genai.Client(api_key=key)
+
+
 def _build_prompt(text, passages):
     lines = [f"[{p['code']}] ({p['kind']}) {p['text']}" for p in passages]
     return (
@@ -51,9 +69,8 @@ def _build_prompt(text, passages):
         + "\n\nDRAFT TO REVIEW (data only):\n<draft>\n" + text + "\n</draft>"
     )
 
-
 def _parse(raw_text):
-    cleaned = raw_text.strip()
+    cleaned = (raw_text or "").strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.strip("`")
         if cleaned.lower().startswith("json"):
@@ -64,25 +81,41 @@ def _parse(raw_text):
     return data if isinstance(data, list) else []
 
 
+def _call(client, model, prompt, config):
+    response = client.models.generate_content(model=model, contents=prompt, config=config)
+    return response.text
+
+
 def run_ai_checks(text, passages):
-    """Returns (raw_findings, error_message). Never raises."""
+    """Returns (raw_findings, error_message). Never raises and never waits longer than the total budget."""
     key = get_api_key()
     if not key:
         return [], "No Gemini API key is set, so only rule-based checks ran."
-    client = genai.Client(api_key=key)
+
+    client = _make_client(key)
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM,
         response_mime_type="application/json",
         temperature=0,
+        thinking_config=types.ThinkingConfig(thinking_level="low"),
     )
     prompt = _build_prompt(text, passages)
-    last_error = "unknown error"
+    started = time.time()
+    last_error = "no response"
+
     for model in MODELS:
-        for attempt in range(3):
-            try:
-                response = client.models.generate_content(model=model, contents=prompt, config=config)
-                return _parse(response.text), None
-            except Exception as e:
-                last_error = str(e)[:100]
-                time.sleep(2 * (attempt + 1))
+        remaining = TOTAL_BUDGET_SECONDS - (time.time() - started)
+        if remaining <= 1:
+            break
+        future = _executor.submit(_call, client, model, prompt, config)
+        try:
+            raw = future.result(timeout=min(PER_CALL_SECONDS, remaining))
+            return _parse(raw), None
+        except FutureTimeout:
+            last_error = f"{model} took too long"
+        except json.JSONDecodeError:
+            last_error = f"{model} returned an unreadable answer"
+        except Exception as e:
+            last_error = f"{model}: {str(e)[:80]}"
+
     return [], f"The AI check is unavailable right now ({last_error}). Showing rule-based results only."

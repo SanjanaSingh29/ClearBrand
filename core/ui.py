@@ -8,11 +8,12 @@ ROLES = ["Creator", "Reviewer", "Manager"]
 
 
 def top_nav():
-    cols = st.columns(4)
+    cols = st.columns(5)
     cols[0].page_link("app.py", label="Home")
     cols[1].page_link("pages/1_Brand_Setup.py", label="Brand Setup")
     cols[2].page_link("pages/2_Review_Draft.py", label="Review Draft")
     cols[3].page_link("pages/3_Review_Queue.py", label="Review Queue")
+    cols[4].page_link("pages/4_Insights.py", label="Insights")
     st.divider()
 
 

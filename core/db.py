@@ -238,3 +238,13 @@ def list_comments(draft_id):
     return _query(
         "SELECT * FROM comments WHERE draft_id = ? ORDER BY id", (draft_id,)
     )
+
+def list_all_findings():
+    return _query(
+        "SELECT f.*, r.version AS version, d.title AS draft_title, d.content_type AS content_type "
+        "FROM findings f "
+        "JOIN revisions r ON r.id = f.revision_id "
+        "JOIN drafts d ON d.id = f.draft_id "
+        "ORDER BY f.id"
+    )
+
