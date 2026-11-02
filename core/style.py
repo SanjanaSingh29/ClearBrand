@@ -15,7 +15,7 @@ CSS = """
 .stApp {
   background: linear-gradient(135deg, #0b1020, #101a3a, #0b2a3a, #1a1040);
   background-size: 300% 300%;
-  animation: gradientShift 24s ease infinite;
+  animation: gradientShift 2s ease infinite;
 }
 
 .block-container { animation: fadeUp .6s ease both; }

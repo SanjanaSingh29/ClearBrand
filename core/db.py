@@ -248,3 +248,62 @@ def list_all_findings():
         "ORDER BY f.id"
     )
 
+def init_auth_tables():
+    conn = get_conn()
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                display_name TEXT NOT NULL,
+                role TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at TEXT NOT NULL,
+                username TEXT NOT NULL,
+                role TEXT NOT NULL,
+                action TEXT NOT NULL,
+                target TEXT,
+                detail TEXT
+            );
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def add_user(username, display_name, role, salt, password_hash):
+    _execute(
+        "INSERT INTO users (username, display_name, role, salt, password_hash, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (username, display_name, role, salt, password_hash, _now()),
+    )
+
+
+def get_user(username):
+    rows = _query("SELECT * FROM users WHERE username = ?", (username,))
+    return rows[0] if rows else None
+
+
+def list_users():
+    return _query("SELECT * FROM users ORDER BY role, username")
+
+
+def log_event(username, role, action, target="", detail=""):
+    _execute(
+        "INSERT INTO audit_log (at, username, role, action, target, detail) VALUES (?, ?, ?, ?, ?, ?)",
+        (_now(), username, role, action, target, detail),
+    )
+
+
+def list_audit(limit=1000):
+    return _query("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,))
+
+def delete_user(username):
+    _execute("DELETE FROM users WHERE username = ?", (username,))

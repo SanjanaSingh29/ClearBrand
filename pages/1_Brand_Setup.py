@@ -1,8 +1,9 @@
 import streamlit as st
-from core.ui import setup_page
+from core.ui import setup_page, current_user
 from core import db
 
 role = setup_page("Brand Setup")
+me = current_user()["username"]
 is_manager = role == "Manager"
 
 st.title("Brand Setup")
@@ -38,6 +39,7 @@ for tab, (kind, label, hint) in zip(tabs, SECTIONS):
                 col_text.write(item["text"])
             if is_manager and col_btn.button("Delete", key=f"del_{item['code']}"):
                 db.delete_source(item["code"])
+                db.log_event(me, role, "source_deleted", item["code"], item["text"][:80])
                 st.rerun()
 
         if is_manager:
@@ -49,7 +51,8 @@ for tab, (kind, label, hint) in zip(tabs, SECTIONS):
                     submitted = st.form_submit_button("Add glossary entry")
                     if submitted:
                         if avoid.strip() and preferred.strip():
-                            db.add_source(kind, f"{avoid.strip()} => {preferred.strip()}")
+                            code = db.add_source(kind, f"{avoid.strip()} => {preferred.strip()}")
+                            db.log_event(me, role, "source_added", code, f"{avoid.strip()} => {preferred.strip()}")
                             st.rerun()
                         else:
                             st.error("Fill in both fields.")
@@ -58,7 +61,8 @@ for tab, (kind, label, hint) in zip(tabs, SECTIONS):
                     submitted = st.form_submit_button("Add")
                     if submitted:
                         if text.strip():
-                            db.add_source(kind, text)
+                            code = db.add_source(kind, text)
+                            db.log_event(me, role, "source_added", code, text.strip()[:80])
                             st.rerun()
                         else:
                             st.error("Write something first.")
@@ -70,11 +74,12 @@ for tab, (kind, label, hint) in zip(tabs, SECTIONS):
                     key=f"upload_{kind}",
                 )
                 if uploaded is not None and st.button("Import file", key=f"import_{kind}"):
-                    lines = uploaded.getvalue().decode("utf-8").splitlines()
+                    lines = uploaded.getvalue().decode("utf-8", errors="ignore").splitlines()
                     count = 0
                     for line in lines:
                         if line.strip():
                             db.add_source(kind, line)
                             count += 1
+                    db.log_event(me, role, "sources_imported", kind, f"{count} entries from {uploaded.name}")
                     st.success(f"Imported {count} entries.")
                     st.rerun()

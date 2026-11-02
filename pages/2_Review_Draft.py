@@ -1,11 +1,12 @@
 import re
 import streamlit as st
-from core.ui import setup_page
+from core.ui import setup_page, current_user
 from core import db
 from core.review import run_checks
 from core.importers import extract_text, MAX_CHARS, MAX_FILE_MB
 
 role = setup_page("Review Draft")
+me = current_user()["username"]
 st.title("Review Draft")
 
 if not db.list_sources():
@@ -17,7 +18,8 @@ CAN_CREATE = role in ("Creator", "Reviewer")
 
 
 def run_and_save(draft_id, revision_id, text):
-    findings, notice = run_checks(text)
+    with st.spinner("Checking against your brand material... this can take up to 30 seconds"):
+        findings, notice = run_checks(text)
     db.save_findings(draft_id, revision_id, findings)
     st.session_state.ai_notice = notice
     st.session_state.check_info = (
@@ -104,8 +106,9 @@ if CAN_CREATE:
             elif len(body) > MAX_CHARS:
                 st.error(f"The text is longer than {MAX_CHARS:,} characters. Shorten it or split it into two drafts.")
             else:
-                new_id = db.create_draft(title.strip(), ctype, role, body)
+                new_id = db.create_draft(title.strip(), ctype, me, body)
                 first = db.latest_revision(new_id)
+                db.log_event(me, role, "draft_created", f"draft #{new_id}", title.strip()[:80])
                 run_and_save(new_id, first["id"], first["content"])
                 st.session_state.draft_id = new_id
                 st.session_state.form_n = n + 1
@@ -114,12 +117,13 @@ else:
     st.info("Only the Creator and Reviewer roles can submit or edit drafts. Managers can view drafts and manage brand material.")
 
 # ---------- Pick a draft ----------
-drafts = db.list_drafts()
+all_drafts = db.list_drafts()
+drafts = all_drafts if role != "Creator" else [d for d in all_drafts if d["creator"] == me]
 if not drafts:
-    st.info("No drafts yet. A Creator can submit one above.")
+    st.info("No drafts yet. A Creator or Reviewer can submit one above." if role != "Creator" else "You have no drafts yet. Submit one above.")
     st.stop()
 
-labels = {d["id"]: f"#{d['id']}  {d['title']}  ({d['status']})" for d in drafts}
+labels = {d["id"]: f"#{d['id']}  {d['title']}  ({d['status']})  by {d['creator']}" for d in drafts}
 ids = list(labels.keys())
 current = st.session_state.get("draft_id", ids[0])
 if current not in ids:
@@ -131,9 +135,10 @@ draft = db.get_draft(draft_id)
 rev = db.latest_revision(draft_id)
 findings = db.list_findings(draft_id, rev["id"])
 open_count = sum(1 for f in findings if f["status"] == "open")
-can_edit = CAN_CREATE and draft["status"] in ("Draft", "Changes Requested")
+is_mine = draft["creator"] == me
+can_edit = CAN_CREATE and is_mine and draft["status"] in ("Draft", "Changes Requested")
 
-st.caption(f"{draft['content_type']}  |  Version {rev['version']}  |  Status: {draft['status']}")
+st.caption(f"{draft['content_type']}  |  Version {rev['version']}  |  Status: {draft['status']}  |  Created by {draft['creator']}")
 if st.session_state.get("ai_notice"):
     st.warning(st.session_state.ai_notice)
 if st.session_state.get("check_info"):
@@ -161,6 +166,7 @@ with left:
                     st.error(f"The text is longer than {MAX_CHARS:,} characters.")
                 else:
                     new_rev = db.add_revision(draft_id, new_text.strip(), note="Edited after check")
+                    db.log_event(me, role, "draft_revised", f"draft #{draft_id}", f"version {rev['version'] + 1}")
                     run_and_save(draft_id, new_rev, new_text.strip())
                     st.rerun()
 
@@ -168,15 +174,19 @@ with left:
             st.warning(f"{open_count} finding(s) still open. Accept or dismiss each one before submitting.")
         if st.button("Submit for review", disabled=open_count > 0, key=f"submit_{draft_id}"):
             db.update_draft_status(draft_id, "In Review")
+            db.log_event(me, role, "draft_submitted", f"draft #{draft_id}", f"version {rev['version']}")
             st.rerun()
+    elif CAN_CREATE and not is_mine:
+        st.info("You can read this draft, but only the person who created it can edit it.")
 
     comments = db.list_comments(draft_id)
     if comments:
         st.subheader("Comments")
         for c in comments:
-            st.markdown(f"**{c['role']}** ({c['created_at']}): {c['body']}")
+            st.markdown(f"**{c['author']} ({c['role']})** ({c['created_at']}): {c['body']}")
 
 # ---------- Findings ----------
+source_map = {s["code"]: s for s in db.list_sources()}
 with right:
     st.subheader(f"Findings ({len(findings)})")
     st.metric("Compliance score", f"{compliance_score(findings)} / 100")
@@ -199,7 +209,7 @@ with right:
             if f["category"] == "Accessibility":
                 st.caption("Built-in accessibility rule (not from your brand material).")
             elif f["source_code"]:
-                src = db.get_source(f["source_code"])
+                src = source_map.get(f["source_code"])
                 if src:
                     st.caption(f"Source {src['code']}: {src['text']}")
             else:
@@ -211,11 +221,13 @@ with right:
                 c1, c2 = st.columns(2)
                 if c1.button("Accept", key=f"acc_{f['id']}"):
                     db.update_finding_status(f["id"], "accepted")
+                    db.log_event(me, role, "finding_accepted", f"draft #{draft_id}", f"{f['category']}: {f['flagged_text'][:60]}")
                     st.rerun()
                 why = st.text_input("Reason to dismiss", key=f"why_{f['id']}")
                 if c2.button("Dismiss", key=f"dis_{f['id']}"):
                     if why.strip():
                         db.update_finding_status(f["id"], "dismissed", why.strip())
+                        db.log_event(me, role, "finding_dismissed", f"draft #{draft_id}", f"{f['category']}: {f['flagged_text'][:40]} | reason: {why.strip()[:60]}")
                         st.rerun()
                     else:
                         st.error("Give a short reason to dismiss.")
