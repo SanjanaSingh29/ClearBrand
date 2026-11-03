@@ -36,7 +36,7 @@ def top_nav():
 def _login_view():
     st.title("Sign in to ClearBrand")
     st.write("Each account has one fixed role, set by a Manager. Sign in to continue.")
-
+    st.info("Judges: click a demo role in the sidebar to sign in instantly, or use the demo accounts below. No registration is needed.")
     if st.session_state.get("failed_logins", 0) >= 5:
         st.error("Too many failed attempts in this session. Reload the page to try again.")
     else:
