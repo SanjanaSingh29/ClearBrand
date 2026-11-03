@@ -35,8 +35,9 @@ def top_nav():
 
 def _login_view():
     st.title("Sign in to ClearBrand")
-    st.write("Each account has one fixed role, set by a Manager. Sign in to continue.")
     st.info("Judges: click a demo role in the sidebar to sign in instantly, or use the demo accounts below. No registration is needed.")
+    st.write("Each account has one fixed role, set by a Manager. Sign in to continue.")
+
     if st.session_state.get("failed_logins", 0) >= 5:
         st.error("Too many failed attempts in this session. Reload the page to try again.")
     else:
@@ -67,6 +68,23 @@ def _login_view():
         )
 
 
+def _guest_sidebar():
+    with st.sidebar:
+        st.markdown("### ClearBrand")
+        st.caption("Check content against approved brand rules before it is published.")
+        st.markdown("**Try it now**")
+        st.caption("Sign in with a demo account in one click:")
+        for username, name, role, password in auth.DEMO_ACCOUNTS:
+            if st.button(f"{role}: {name}", key=f"quick_{username}"):
+                user = auth.authenticate(username, password)
+                if user:
+                    st.session_state.user = user
+                    st.session_state.failed_logins = 0
+                    db.log_event(user["username"], user["role"], "login", "", "one-click demo sign-in")
+                    st.rerun()
+        st.caption("Demo accounts are public. Use only non-confidential text.")
+
+
 def _sign_out(user):
     db.log_event(user["username"], user["role"], "logout")
     st.session_state.pop("user", None)
@@ -93,21 +111,7 @@ def _account_section(user):
             else:
                 st.error("Wrong password. Nothing was deleted.")
 
-def _guest_sidebar():
-    with st.sidebar:
-        st.markdown("### ClearBrand")
-        st.caption("Check content against approved brand rules before it is published.")
-        st.markdown("**Try it now**")
-        st.caption("Sign in with a demo account in one click:")
-        for username, name, role, password in auth.DEMO_ACCOUNTS:
-            if st.button(f"{role}: {name}", key=f"quick_{username}"):
-                user = auth.authenticate(username, password)
-                if user:
-                    st.session_state.user = user
-                    st.session_state.failed_logins = 0
-                    db.log_event(user["username"], user["role"], "login", "", "one-click demo sign-in")
-                    st.rerun()
-        st.caption("Demo accounts are public. Use only non-confidential text.")
+
 def setup_page(page_title, require_login=True):
     st.set_page_config(
         page_title=f"{page_title} | ClearBrand",
@@ -129,6 +133,7 @@ def setup_page(page_title, require_login=True):
     user = current_user()
     if user is None:
         if require_login:
+            _guest_sidebar()
             _login_view()
             st.stop()
         return None
@@ -140,12 +145,5 @@ def setup_page(page_title, require_login=True):
             _sign_out(user)
             st.rerun()
         _account_section(user)
-        user = current_user()
-        if user is None:
-            if require_login:
-                _guest_sidebar()
-                _login_view()
-                st.stop()
-            return None
 
     return user["role"]
